@@ -1,3 +1,4 @@
+//@ts
 import dotenv from 'dotenv';
 import { prisma } from './lib/prisma';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -281,7 +282,7 @@ const leaderboard = async () => {
     const users = await prisma.user.findMany({
       orderBy: { points: 'desc' }
     });
-    return users.map((user, index) => ({
+    return users.map((user : any, index : any) => ({
       name: user.name,
       points: user.points,
       rank: index + 1
