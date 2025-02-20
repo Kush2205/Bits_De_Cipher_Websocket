@@ -7,7 +7,8 @@ interface ExtWebSocket extends WebSocket {
 }
 
 dotenv.config();
-const wss = new WebSocketServer({ port: 8080 });
+const PORT = parseInt(process.env.PORT || '8080', 10);
+const wss = new WebSocketServer({ port: PORT });
 
 const activeUsers: any = [];
 
