@@ -23,5 +23,8 @@
   "devDependencies": {
     "@types/node": "^22.13.2",
     "@types/ws": "^8.5.14"
+  },
+  "prisma" : {
+    "schema": "prisma/schema.prisma"
   }
 }
