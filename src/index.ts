@@ -1,4 +1,3 @@
-//@ts
 import dotenv from 'dotenv';
 import { prisma } from './lib/prisma';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -11,7 +10,7 @@ dotenv.config();
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const wss = new WebSocketServer({ port: PORT });
 
-const activeUsers: any = [];
+const activeUsers: any[] = [];
 
 const jsonReplacer = (key: string, value: any) =>
   typeof value === 'bigint' ? value.toString() : value;
@@ -24,9 +23,15 @@ wss.on('connection', (socket: ExtWebSocket) => {
       console.log('Received message:', msg);
     } catch (error) {
       console.error('Error parsing message:', error, 'Original message:', message);
-      socket.send(JSON.stringify({ error: 'Invalid message format. Please ensure JSON keys are double-quoted.' }));
+      socket.send(
+        JSON.stringify({
+          error:
+            'Invalid message format. Please ensure JSON keys are double-quoted.'
+        })
+      );
       return;
     }
+
     const { command, email, answer } = msg;
     try {
       if (command === 'connect') {
@@ -36,6 +41,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
         }
         let user;
         try {
+          // Fetch the complete user including hintsData
           user = await prisma.user.findUnique({ where: { email } });
         } catch (err) {
           console.error('Error finding user:', err);
@@ -57,6 +63,13 @@ wss.on('connection', (socket: ExtWebSocket) => {
           const data = { leaderboard: leaderboardData, question: questionData };
           socket.send(JSON.stringify(data, jsonReplacer));
           console.log(activeUsers);
+
+          // Broadcast updated leaderboard to all clients when a new user connects.
+          wss.clients.forEach((client: WebSocket) => {
+            if (client !== socket && client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({ leaderboard: leaderboardData }, jsonReplacer));
+            }
+          });
         } else {
           socket.send(JSON.stringify({ error: 'User not found' }));
         }
@@ -65,6 +78,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'Missing email parameter' }));
           return;
         }
+        // Find the user from our activeUsers (which already includes hintsData).
         const user = activeUsers.find((u: any) => u.email === email);
         if (user) {
           let question;
@@ -79,20 +93,19 @@ wss.on('connection', (socket: ExtWebSocket) => {
           }
           if (question && question.answer === answer.answer) {
             const currentQId = Number(answer.id);
+            // Calculate reward points for the answering user (personal view – use hintsData on user)
             let rewardPoints = question.points;
-
-            const hintsData = user.hintsData as Array<{ id: number; hint1: boolean; hint2: boolean }>;
-            const hintIndex = hintsData.findIndex(hint => hint.id === currentQId);
-
-            if (hintIndex !== -1) {
-              if (hintsData[hintIndex].hint1) {
+            const hintRecord = user.hintsData.find((record: any) => record.id === currentQId);
+            if (hintRecord) {
+              if (hintRecord.hint1) {
                 rewardPoints -= Math.floor(question.points * 0.1);
               }
-              if (hintsData[hintIndex].hint2) {
-                rewardPoints -= Math.floor(rewardPoints * 0.2);
+              if (hintRecord.hint2) {
+                rewardPoints = Math.floor(rewardPoints * 0.8);
               }
             }
 
+            // Update user's points and question counters.
             let updatedUser;
             try {
               updatedUser = await prisma.user.update({
@@ -105,7 +118,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
                   }
                 }
               });
-
+              // Also update our activeUsers array.
               const idx = activeUsers.findIndex((u: any) => u.email === email);
               if (idx !== -1) {
                 activeUsers[idx] = { ...activeUsers[idx], ...updatedUser };
@@ -116,11 +129,15 @@ wss.on('connection', (socket: ExtWebSocket) => {
               return;
             }
 
+            // Update global question points for other users.
+            // Always apply a fixed 5% deduction on the original points.
             const originalPoints = question.originalpoints ?? question.points;
-            let newGlobalPoints = question.points - Math.floor(originalPoints * question.dec_factor);
-            console.log('New global points:', newGlobalPoints);
+            const fixedDeduction = Math.floor(originalPoints * 0.05);
+            let newGlobalPoints = originalPoints - fixedDeduction;
+            // Enforce a lower-bound (e.g. not less than 50% of original points).
             const minPoints = Math.floor(originalPoints / 2);
             if (newGlobalPoints < minPoints) newGlobalPoints = minPoints;
+            console.log('New global points (for display):', newGlobalPoints);
             try {
               await prisma.questions.update({
                 where: { questionId: currentQId },
@@ -132,9 +149,11 @@ wss.on('connection', (socket: ExtWebSocket) => {
               return;
             }
 
+            // Fetch updated question details.
+            // For global broadcast, use the global flag so that the returned value is (original points - fixed 5%)
             let updatedQuestionData;
             try {
-              updatedQuestionData = await questionDetails(currentQId, email);
+              updatedQuestionData = await questionDetails(currentQId, email, true);
             } catch (err) {
               console.error('Error fetching updated question details:', err);
               socket.send(JSON.stringify({ error: 'Error fetching updated question details' }));
@@ -144,6 +163,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
             let leaderboardData, nextQuestionData;
             try {
               leaderboardData = await leaderboard();
+              // For the answering user, fetch the next question using personal deductions.
               nextQuestionData = await questionDetails(Number(updatedUser.questionsAnswered) + 1, email);
             } catch (err) {
               console.error('Error fetching updated leaderboard or next question data:', err);
@@ -151,14 +171,24 @@ wss.on('connection', (socket: ExtWebSocket) => {
               return;
             }
 
-            socket.send(JSON.stringify({ answerStatus: "correct", leaderboard: leaderboardData, question: nextQuestionData }, jsonReplacer));
+            socket.send(
+              JSON.stringify(
+                {
+                  answerStatus: "correct",
+                  leaderboard: leaderboardData,
+                  question: nextQuestionData
+                },
+                jsonReplacer
+              )
+            );
 
+            // Broadcast updated leaderboard to all clients.
             wss.clients.forEach((client: WebSocket) => {
               if (client !== socket && client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify({ leaderboard: leaderboardData }, jsonReplacer));
               }
             });
-
+            // Broadcast updated global question data.
             wss.clients.forEach((client: WebSocket) => {
               const extClient = client as ExtWebSocket;
               if (extClient.readyState === WebSocket.OPEN && extClient.email) {
@@ -168,7 +198,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
                 }
               }
             });
-
           } else {
             socket.send(JSON.stringify({ answerStatus: "incorrect" }, jsonReplacer));
           }
@@ -185,7 +214,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'User not found' }));
           return;
         }
-
         const currentQuestionId = Number(user.questionsAnswered) + 1;
         let question;
         try {
@@ -208,32 +236,28 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'Question not found for hints' }));
           return;
         }
-
-        const hintsData = user.hintsData as Array<{ id: number; hint1: boolean; hint2: boolean }>;
-        const hintIndex = hintsData.findIndex(hint => hint.id === currentQuestionId);
-
-        if (hintIndex === -1) {
+        // Use the hintsData array on the user model (so that hints from previous questions are not applied).
+        const hintRecord = user.hintsData.find((record: any) => record.id === currentQuestionId);
+        if (!hintRecord) {
           socket.send(JSON.stringify({ error: 'Question not found in hintsData' }));
           return;
         }
-
         if (command === 'hint1') {
-          if (hintsData[hintIndex].hint1) {
+          if (hintRecord.hint1) {
             socket.send(JSON.stringify({ hint1: question.hint1 }, jsonReplacer));
             return;
           }
-
           const deduction = Math.floor(question.points * 0.1);
           const newPoints = question.points - deduction;
-
+          // Update the hintsData array for this user.
+          user.hintsData = user.hintsData.map((record: any) =>
+            record.id === currentQuestionId ? { ...record, hint1: true } : record
+          );
           try {
-            hintsData[hintIndex].hint1 = true;
-
             await prisma.user.update({
               where: { email: user.email },
-              data: { hintsData, }
+              data: { hintsData: user.hintsData }
             });
-
             socket.send(JSON.stringify({ hint1: question.hint1, points: newPoints }, jsonReplacer));
           } catch (err) {
             console.error('Error updating hint1:', err);
@@ -241,27 +265,27 @@ wss.on('connection', (socket: ExtWebSocket) => {
             return;
           }
         } else if (command === 'hint2') {
-          if (!hintsData[hintIndex].hint1) {
+          if (!hintRecord.hint1) {
             socket.send(JSON.stringify({ error: 'You must use hint1 before using hint2' }));
             return;
           }
-
-          if (hintsData[hintIndex].hint2) {
+          if (hintRecord.hint2) {
             socket.send(JSON.stringify({ hint2: question.hint2 }, jsonReplacer));
             return;
           }
-
-          const deduction = Math.floor(question.points *0.9* 0.2);
-          const newPoints = question.points*0.9 - deduction;
-
+          // For hint2, the deduction is applied on points after the hint1 deduction.
+          const baseAfterHint1 = question.points - Math.floor(question.points * 0.1);
+          const deduction = Math.floor(baseAfterHint1 * 0.2);
+          const newPoints = baseAfterHint1 - deduction;
+          // Update the hintsData array for this user.
+          user.hintsData = user.hintsData.map((record: any) =>
+            record.id === currentQuestionId ? { ...record, hint2: true } : record
+          );
           try {
-            hintsData[hintIndex].hint2 = true;
-
             await prisma.user.update({
               where: { email: user.email },
-              data: { hintsData,}
+              data: { hintsData: user.hintsData }
             });
-
             socket.send(JSON.stringify({ hint2: question.hint2, points: newPoints }, jsonReplacer));
           } catch (err) {
             console.error('Error updating hint2:', err);
@@ -282,7 +306,7 @@ const leaderboard = async () => {
     const users = await prisma.user.findMany({
       orderBy: { points: 'desc' }
     });
-    return users.map((user : any, index : any) => ({
+    return users.map((user: any, index: any) => ({
       name: user.name,
       points: user.points,
       rank: index + 1
@@ -293,50 +317,53 @@ const leaderboard = async () => {
   }
 };
 
-const questionDetails = async (questionId: number, email: string) => {
+// Updated questionDetails.
+// When global=true, return question points as (original points - fixed 5% deduction).
+// Otherwise, calculate deductions based on hintsData from the user model.
+const questionDetails = async (
+  questionId: number,
+  email: string,
+  global: boolean = false
+) => {
   try {
     const question = await prisma.questions.findUnique({
       where: { questionId },
       select: {
         imageUrl: true,
         points: true,
-        questionId: true
+        questionId: true,
+        originalpoints: true
       }
     });
-
     if (!question) {
       throw new Error('Question not found');
     }
-
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        hintsData: true
+    if (global) {
+      const orig = question.originalpoints ?? question.points;
+      const fixedDeduction = Math.floor(orig * 0.05);
+      return { ...question, points: orig - fixedDeduction };
+    } else {
+      // Get the user's hintsData from the database.
+      const userRecord = await prisma.user.findUnique({
+        where: { email },
+        select: { hintsData: true }
+      });
+      if (!userRecord) {
+        throw new Error('User not found');
       }
-    });
-
-    if (!user) {
-      throw new Error('User not found');
+      const hintsArray = userRecord.hintsData as Array<{ id: number; hint1: boolean; hint2: boolean }>;
+      const hintRecord = hintsArray.find((record) => record.id === questionId);
+      let points = question.points;
+      if (hintRecord) {
+        if (hintRecord.hint1) {
+          points -= Math.floor(question.points * 0.1);
+        }
+        if (hintRecord.hint2) {
+          points = Math.floor(points * 0.8);
+        }
+      }
+      return { ...question, points };
     }
-
-    const hintsData = user.hintsData as Array<{ id: number; hint1: boolean; hint2: boolean }>;
-    const hintIndex = hintsData.findIndex(hint => hint.id === questionId);
-
-    let points = question.points;
-
-    if (hintIndex !== -1) {
-      if (hintsData[hintIndex].hint1) {
-        points -= Math.floor(question.points * 0.1);
-      }
-      if (hintsData[hintIndex].hint2) {
-        points -= Math.floor(points * 0.2);
-      }
-    }
-
-    return {
-      ...question,
-      points
-    };
   } catch (err) {
     console.error('Error in questionDetails function:', err);
     throw err;
