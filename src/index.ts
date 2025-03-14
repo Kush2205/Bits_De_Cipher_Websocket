@@ -84,7 +84,13 @@ wss.on('connection', (socket: ExtWebSocket) => {
           let question;
           try {
             question = await prisma.questions.findUnique({
-              where: { questionId: Number(answer.id) }
+              where: { questionId: Number(answer.id) },
+              select: {
+                answer: true,
+                points: true,
+                questionId: true,
+                originalpoints: true
+              }
             });
           } catch (err) {
             console.error('Error fetching question:', err);
@@ -130,14 +136,21 @@ wss.on('connection', (socket: ExtWebSocket) => {
             }
 
             // Update global question points for other users.
-            // Always apply a fixed 5% deduction on the original points.
+            // Apply a 5% deduction on the CURRENT points value.
             const originalPoints = question.originalpoints ?? question.points;
-            const fixedDeduction = Math.floor(originalPoints * 0.05);
-            let newGlobalPoints = originalPoints - fixedDeduction;
-            // Enforce a lower-bound (e.g. not less than 50% of original points).
-            const minPoints = Math.floor(originalPoints / 2);
-            if (newGlobalPoints < minPoints) newGlobalPoints = minPoints;
-            console.log('New global points (for display):', newGlobalPoints);
+            const minPoints = Math.floor(originalPoints / 2);  // 50% of original points
+            
+            // Apply 5% reduction on current points
+            const deduction = Math.floor(question.points * 0.05);
+            let newGlobalPoints = question.points - deduction;
+            
+            // Ensure we don't go below the minimum points (50% of original)
+            if (newGlobalPoints < minPoints) {
+                newGlobalPoints = minPoints;
+            }
+            
+            console.log(`Question ${currentQId} points updated: ${question.points} -> ${newGlobalPoints}`);
+            
             try {
               await prisma.questions.update({
                 where: { questionId: currentQId },
@@ -150,7 +163,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
             }
 
             // Fetch updated question details.
-            // For global broadcast, use the global flag so that the returned value is (original points - fixed 5%)
+            // Get the current points value from the database, which now has the 5% reduction applied
             let updatedQuestionData;
             try {
               updatedQuestionData = await questionDetails(currentQId, email, true);
@@ -318,7 +331,7 @@ const leaderboard = async () => {
 };
 
 // Updated questionDetails.
-// When global=true, return question points as (original points - fixed 5% deduction).
+// When global=true, return question points using current points from the database.
 // Otherwise, calculate deductions based on hintsData from the user model.
 const questionDetails = async (
   questionId: number,
@@ -338,10 +351,11 @@ const questionDetails = async (
     if (!question) {
       throw new Error('Question not found');
     }
+    
     if (global) {
-      const orig = question.originalpoints ?? question.points;
-      const fixedDeduction = Math.floor(orig * 0.05);
-      return { ...question, points: orig - fixedDeduction };
+      // Simply return the current points value from the database 
+      // (which already has the appropriate deductions applied)
+      return question;
     } else {
       // Get the user's hintsData from the database.
       const userRecord = await prisma.user.findUnique({
