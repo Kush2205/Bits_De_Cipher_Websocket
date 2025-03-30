@@ -64,7 +64,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify(data, jsonReplacer));
           console.log(activeUsers);
 
-          // Broadcast updated leaderboard to all clients when a new user connects.
+         
           wss.clients.forEach((client: WebSocket) => {
             if (client !== socket && client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({ leaderboard: leaderboardData }, jsonReplacer));
@@ -78,7 +78,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'Missing email parameter' }));
           return;
         }
-        // Find the user from our activeUsers (which already includes hintsData).
+        
         const user = activeUsers.find((u: any) => u.email === email);
         if (user) {
           let question;
@@ -99,7 +99,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
           }
           if (question && question.answer === answer.answer) {
             const currentQId = Number(answer.id);
-            // Calculate reward points for the answering user (personal view – use hintsData on user)
+           
             let rewardPoints = question.points;
             const hintRecord = user.hintsData.find((record: any) => record.id === currentQId);
             if (hintRecord) {
@@ -111,7 +111,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
               }
             }
 
-            // Update user's points and question counters.
+           
             let updatedUser;
             try {
               updatedUser = await prisma.user.update({
@@ -120,11 +120,11 @@ wss.on('connection', (socket: ExtWebSocket) => {
                   points: { increment: rewardPoints },
                   questionsAnswered: { increment: 1 },
                   questionAnsweredTime: {
-                    push: { questionId: currentQId, time: new Date() }
+                     push :{ questionId: currentQId, time: new Date() } 
                   }
                 }
               });
-              // Also update our activeUsers array.
+             
               const idx = activeUsers.findIndex((u: any) => u.email === email);
               if (idx !== -1) {
                 activeUsers[idx] = { ...activeUsers[idx], ...updatedUser };
@@ -135,16 +135,13 @@ wss.on('connection', (socket: ExtWebSocket) => {
               return;
             }
 
-            // Update global question points for other users.
-            // Apply a 5% deduction on the CURRENT points value.
-            const originalPoints = question.originalpoints ?? question.points;
-            const minPoints = Math.floor(originalPoints / 2);  // 50% of original points
             
-            // Apply 5% reduction on current points
+            const originalPoints = question.originalpoints ?? question.points;
+            const minPoints = Math.floor(originalPoints / 2); 
             const deduction = Math.floor(question.points * 0.05);
             let newGlobalPoints = question.points - deduction;
             
-            // Ensure we don't go below the minimum points (50% of original)
+            
             if (newGlobalPoints < minPoints) {
                 newGlobalPoints = minPoints;
             }
@@ -162,8 +159,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
               return;
             }
 
-            // Fetch updated question details.
-            // Get the current points value from the database, which now has the 5% reduction applied
             let updatedQuestionData;
             try {
               updatedQuestionData = await questionDetails(currentQId, email, true);
@@ -176,7 +171,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
             let leaderboardData, nextQuestionData;
             try {
               leaderboardData = await leaderboard();
-              // For the answering user, fetch the next question using personal deductions.
+              
               nextQuestionData = await questionDetails(Number(updatedUser.questionsAnswered) + 1, email);
             } catch (err) {
               console.error('Error fetching updated leaderboard or next question data:', err);
@@ -195,13 +190,13 @@ wss.on('connection', (socket: ExtWebSocket) => {
               )
             );
 
-            // Broadcast updated leaderboard to all clients.
+            
             wss.clients.forEach((client: WebSocket) => {
               if (client !== socket && client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify({ leaderboard: leaderboardData }, jsonReplacer));
               }
             });
-            // Broadcast updated global question data.
+            
             wss.clients.forEach((client: WebSocket) => {
               const extClient = client as ExtWebSocket;
               if (extClient.readyState === WebSocket.OPEN && extClient.email) {
@@ -249,7 +244,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'Question not found for hints' }));
           return;
         }
-        // Use the hintsData array on the user model (so that hints from previous questions are not applied).
+        
         const hintRecord = user.hintsData.find((record: any) => record.id === currentQuestionId);
         if (!hintRecord) {
           socket.send(JSON.stringify({ error: 'Question not found in hintsData' }));

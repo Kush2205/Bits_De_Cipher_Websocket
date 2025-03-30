@@ -25,7 +25,7 @@ model User {
   points               Int      @default(0)
   hintsData            Json     @default("[{\"id\":1,\"hint1\":false,\"hint2\":false},{\"id\":2,\"hint1\":false,\"hint2\":false},{\"id\":3,\"hint1\":false,\"hint2\":false},{\"id\":4,\"hint1\":false,\"hint2\":false},{\"id\":5,\"hint1\":false,\"hint2\":false},{\"id\":6,\"hint1\":false,\"hint2\":false},{\"id\":7,\"hint1\":false,\"hint2\":false},{\"id\":8,\"hint1\":false,\"hint2\":false},{\"id\":9,\"hint1\":false,\"hint2\":false},{\"id\":10,\"hint1\":false,\"hint2\":false},{\"id\":11,\"hint1\":false,\"hint2\":false}]")
   questionsAnswered    Int      @default(0)
-  questionAnsweredTime Json     @default("[]") 
+  questionAnsweredTime Json[]     
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 }
