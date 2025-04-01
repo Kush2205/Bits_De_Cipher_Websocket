@@ -30,6 +30,13 @@ model User {
   updatedAt            DateTime @updatedAt
 }
 
+model RegisteredUser{
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                 String
+  email                String   @unique
+  registeredAt          DateTime @default(now())
+}
+
 type AnswerRecord {
   questionId Int
   time       DateTime
