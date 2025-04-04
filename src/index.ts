@@ -348,7 +348,7 @@ const questionDetails = async (
         question.questionVisitData.length > 0 &&
         (question.questionVisitData[0] as { isVisited: boolean }).isVisited === false
       ) {
-        const newVisitData = [{ isVisited: true, visitTime: new Date() }];
+        const newVisitData = [{ isVisited: true, visitTime: moment().tz("Asia/Kolkata").toISOString() }];
         question = await prisma.questions.update({
           where: { questionId },
           data: { questionVisitData: newVisitData },
