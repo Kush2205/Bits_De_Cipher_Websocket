@@ -16,8 +16,6 @@ const activeUsers: any[] = [];
 const jsonReplacer = (key: string, value: any) =>
   typeof value === 'bigint' ? value.toString() : value;
 
-const now = moment().tz("Asia/Kolkata").valueOf();
-
 wss.on('connection', (socket: ExtWebSocket) => {
   socket.on('message', async (message: string) => {
     let msg: any;
@@ -26,12 +24,9 @@ wss.on('connection', (socket: ExtWebSocket) => {
       console.log('Received message:', msg);
     } catch (error) {
       console.error('Error parsing message:', error, 'Original message:', message);
-      socket.send(
-        JSON.stringify({
-          error:
-            'Invalid message format. Please ensure JSON keys are double-quoted.'
-        })
-      );
+      socket.send(JSON.stringify({
+        error: 'Invalid message format. Please ensure JSON keys are double-quoted.'
+      }));
       return;
     }
 
@@ -44,7 +39,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
         }
         let user;
         try {
-          
           user = await prisma.user.findUnique({ where: { email } });
         } catch (err) {
           console.error('Error finding user:', err);
@@ -67,7 +61,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify(data, jsonReplacer));
           console.log(activeUsers);
 
-         
           wss.clients.forEach((client: WebSocket) => {
             if (client !== socket && client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({ leaderboard: leaderboardData }, jsonReplacer));
@@ -77,8 +70,8 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'User not found' }));
         }
       } else if (command === 'answer') {
-        const contestEnd = new Date("April 6, 2025 16:00:00").getTime();
-        if (Date.now() > contestEnd) {
+        const contestEnd = moment.tz("April 6, 2025 16:00:00", "Asia/Kolkata").valueOf();
+        if (moment().tz("Asia/Kolkata").valueOf() > contestEnd) {
           socket.send(JSON.stringify({ message: "The contest has ended" }));
           return;
         }
@@ -86,7 +79,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'Missing email parameter' }));
           return;
         }
-        
         const user = activeUsers.find((u: any) => u.email === email);
         if (user) {
           let question;
@@ -107,7 +99,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
           }
           if (question && question.answer === answer.answer) {
             const currentQId = Number(answer.id);
-           
             let rewardPoints = question.points;
             const hintRecord = user.hintsData.find((record: any) => record.id === currentQId);
             if (hintRecord) {
@@ -118,8 +109,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
                 rewardPoints = Math.floor(rewardPoints * 0.8);
               }
             }
-
-           
             let updatedUser;
             try {
               updatedUser = await prisma.user.update({
@@ -127,12 +116,9 @@ wss.on('connection', (socket: ExtWebSocket) => {
                 data: {
                   points: { increment: rewardPoints },
                   questionsAnswered: { increment: 1 },
-                  questionAnsweredTime: {
-                     push :{ questionId: currentQId, time: new Date() } 
-                  }
+                  questionAnsweredTime: { push: { questionId: currentQId, time: new Date() } }
                 }
               });
-             
               const idx = activeUsers.findIndex((u: any) => u.email === email);
               if (idx !== -1) {
                 activeUsers[idx] = { ...activeUsers[idx], ...updatedUser };
@@ -143,19 +129,14 @@ wss.on('connection', (socket: ExtWebSocket) => {
               return;
             }
 
-            
             const originalPoints = question.originalpoints ?? question.points;
-            const minPoints = Math.floor(originalPoints / 2); 
+            const minPoints = Math.floor(originalPoints / 2);
             const deduction = Math.floor(question.points * 0.05);
             let newGlobalPoints = question.points - deduction;
-            
-            
             if (newGlobalPoints < minPoints) {
-                newGlobalPoints = minPoints;
+              newGlobalPoints = minPoints;
             }
-            
             console.log(`Question ${currentQId} points updated: ${question.points} -> ${newGlobalPoints}`);
-            
             try {
               await prisma.questions.update({
                 where: { questionId: currentQId },
@@ -179,7 +160,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
             let leaderboardData, nextQuestionData;
             try {
               leaderboardData = await leaderboard();
-              
               nextQuestionData = await questionDetails(Number(updatedUser.questionsAnswered) + 1, email);
             } catch (err) {
               console.error('Error fetching updated leaderboard or next question data:', err);
@@ -187,18 +167,12 @@ wss.on('connection', (socket: ExtWebSocket) => {
               return;
             }
 
-            socket.send(
-              JSON.stringify(
-                {
-                  answerStatus: "correct",
-                  leaderboard: leaderboardData,
-                  question: nextQuestionData
-                },
-                jsonReplacer
-              )
-            );
+            socket.send(JSON.stringify({
+              answerStatus: "correct",
+              leaderboard: leaderboardData,
+              question: nextQuestionData
+            }, jsonReplacer));
 
-            
             wss.clients.forEach((client: WebSocket) => {
               if (client !== socket && client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify({ leaderboard: leaderboardData }, jsonReplacer));
@@ -221,8 +195,8 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'User not found' }));
         }
       } else if (command === 'hint1' || command === 'hint2') {
-        const contestEnd = new Date("April 6, 2025 16:00:00").getTime();
-        if (Date.now() > contestEnd) {
+        const contestEnd = moment.tz("April 6, 2025 16:00:00", "Asia/Kolkata").valueOf();
+        if (moment().tz("Asia/Kolkata").valueOf() > contestEnd) {
           socket.send(JSON.stringify({ message: "The contest has ended" }));
           return;
         }
@@ -259,36 +233,22 @@ wss.on('connection', (socket: ExtWebSocket) => {
           return;
         }
         
-        // // Check the visitTime from questionVisitData
         let visitRecord = null;
-        if (
-          Array.isArray(question.questionVisitData) && 
-          question.questionVisitData.length > 0
-        ) {
+        if (Array.isArray(question.questionVisitData) && question.questionVisitData.length > 0) {
           visitRecord = question.questionVisitData[0];
         }
-        
-        // Ensure we have a valid visitTime
         if (!visitRecord || !(visitRecord as { visitTime: string }).visitTime) {
           socket.send(JSON.stringify({ error: 'Visit data missing for this question' }));
           return;
         }
-        
-        // Check if two hours (7200000ms) have elapsed since visitTime
-        const visitTime = new Date((visitRecord as { visitTime: string }).visitTime).getTime();
-        const now = new Date().getTime();
-        const twoHours = 2 * 60 *60* 1000;
-        
-        if (now - visitTime < twoHours) {
-          // If not elapsed, compute unlock time
-          const unlockTime = new Date(visitTime + twoHours);
-          socket.send(JSON.stringify({ 
-            message: `Hints will unlock at ${unlockTime.toLocaleTimeString()}` 
-          }));
+        const visitTime = moment((visitRecord as { visitTime: string }).visitTime).tz("Asia/Kolkata").valueOf();
+        const currTime = moment().tz("Asia/Kolkata").valueOf();
+        const twoHours = 2 * 60 * 60 * 1000;
+        if (currTime - visitTime < twoHours) {
+          const unlockTime = moment(visitTime + twoHours).tz("Asia/Kolkata");
+          socket.send(JSON.stringify({ message: `Hints will unlock at ${unlockTime.format("LT")}` }));
           return;
         }
-        
-        // If two hours have elapsed, proceed with the hint logic.
         const hintRecord = user.hintsData.find((record: any) => record.id === currentQuestionId);
         if (command === 'hint1') {
           if (hintRecord && hintRecord.hint1) {
@@ -363,7 +323,6 @@ const leaderboard = async () => {
   }
 };
 
-// Updated questionDetails: it fetches the question, and if not yet visited it updates the record.
 const questionDetails = async (
   questionId: number,
   email: string,
@@ -383,18 +342,13 @@ const questionDetails = async (
     if (!question) {
       throw new Error('Question not found');
     }
-    
-    // Update visit data only when not global.
     if (!global) {
-      // Assuming questionVisitData is stored as an array.
-      // For example: [{ isVisited: false, visitTime: null }]
       if (
         Array.isArray(question.questionVisitData) &&
         question.questionVisitData.length > 0 &&
         (question.questionVisitData[0] as { isVisited: boolean }).isVisited === false
       ) {
         const newVisitData = [{ isVisited: true, visitTime: new Date() }];
-        // Update the question's visit record.
         question = await prisma.questions.update({
           where: { questionId },
           data: { questionVisitData: newVisitData },
@@ -408,11 +362,9 @@ const questionDetails = async (
         });
       }
     }
-    
     if (global) {
       return question;
     } else {
-      // For hints deductions based on user's hintsData, etc.
       const userRecord = await prisma.user.findUnique({
         where: { email },
         select: { hintsData: true }
