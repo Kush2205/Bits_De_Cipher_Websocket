@@ -41,7 +41,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
         }
         let user;
         try {
-          // Fetch the complete user including hintsData
+          
           user = await prisma.user.findUnique({ where: { email } });
         } catch (err) {
           console.error('Error finding user:', err);
@@ -232,7 +232,8 @@ wss.on('connection', (socket: ExtWebSocket) => {
               hint2: true,
               points: true,
               originalpoints: true,
-              dec_factor: true
+              dec_factor: true,
+              questionVisitData: true
             }
           });
         } catch (err) {
@@ -245,19 +246,44 @@ wss.on('connection', (socket: ExtWebSocket) => {
           return;
         }
         
-        const hintRecord = user.hintsData.find((record: any) => record.id === currentQuestionId);
-        if (!hintRecord) {
-          socket.send(JSON.stringify({ error: 'Question not found in hintsData' }));
+        // Check the visitTime from questionVisitData
+        let visitRecord = null;
+        if (
+          Array.isArray(question.questionVisitData) && 
+          question.questionVisitData.length > 0
+        ) {
+          visitRecord = question.questionVisitData[0];
+        }
+        
+        // Ensure we have a valid visitTime
+        if (!visitRecord || !(visitRecord as { visitTime: string }).visitTime) {
+          socket.send(JSON.stringify({ error: 'Visit data missing for this question' }));
           return;
         }
+        
+        // Check if two hours (7200000ms) have elapsed since visitTime
+        const visitTime = new Date((visitRecord as { visitTime: string }).visitTime).getTime();
+        const now = new Date().getTime();
+        const twoHours = 2 * 60 * 60 * 1000;
+        
+        if (now - visitTime < twoHours) {
+          // If not elapsed, compute unlock time
+          const unlockTime = new Date(visitTime + twoHours);
+          socket.send(JSON.stringify({ 
+            message: `Hints will unlock at ${unlockTime.toLocaleTimeString()}` 
+          }));
+          return;
+        }
+        
+        // If two hours have elapsed, proceed with the hint logic.
+        const hintRecord = user.hintsData.find((record: any) => record.id === currentQuestionId);
         if (command === 'hint1') {
-          if (hintRecord.hint1) {
-            socket.send(JSON.stringify({ hint1: question.hint1 }, jsonReplacer));
+          if (hintRecord && hintRecord.hint1) {
+            socket.send(JSON.stringify({ hint1: question.hint1 }));
             return;
           }
           const deduction = Math.floor(question.points * 0.1);
           const newPoints = question.points - deduction;
-          // Update the hintsData array for this user.
           user.hintsData = user.hintsData.map((record: any) =>
             record.id === currentQuestionId ? { ...record, hint1: true } : record
           );
@@ -266,26 +292,24 @@ wss.on('connection', (socket: ExtWebSocket) => {
               where: { email: user.email },
               data: { hintsData: user.hintsData }
             });
-            socket.send(JSON.stringify({ hint1: question.hint1, points: newPoints }, jsonReplacer));
+            socket.send(JSON.stringify({ hint1: question.hint1, points: newPoints }));
           } catch (err) {
             console.error('Error updating hint1:', err);
             socket.send(JSON.stringify({ error: 'Error using hint1' }));
             return;
           }
         } else if (command === 'hint2') {
-          if (!hintRecord.hint1) {
+          if (!hintRecord || !hintRecord.hint1) {
             socket.send(JSON.stringify({ error: 'You must use hint1 before using hint2' }));
             return;
           }
           if (hintRecord.hint2) {
-            socket.send(JSON.stringify({ hint2: question.hint2 }, jsonReplacer));
+            socket.send(JSON.stringify({ hint2: question.hint2 }));
             return;
           }
-          // For hint2, the deduction is applied on points after the hint1 deduction.
           const baseAfterHint1 = question.points - Math.floor(question.points * 0.1);
           const deduction = Math.floor(baseAfterHint1 * 0.2);
           const newPoints = baseAfterHint1 - deduction;
-          // Update the hintsData array for this user.
           user.hintsData = user.hintsData.map((record: any) =>
             record.id === currentQuestionId ? { ...record, hint2: true } : record
           );
@@ -294,7 +318,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
               where: { email: user.email },
               data: { hintsData: user.hintsData }
             });
-            socket.send(JSON.stringify({ hint2: question.hint2, points: newPoints }, jsonReplacer));
+            socket.send(JSON.stringify({ hint2: question.hint2, points: newPoints }));
           } catch (err) {
             console.error('Error updating hint2:', err);
             socket.send(JSON.stringify({ error: 'Error using hint2' }));
@@ -314,7 +338,8 @@ const leaderboard = async () => {
     const users = await prisma.user.findMany({
       orderBy: { points: 'desc' }
     });
-    return users.map((user: any, index: any) => ({
+    const filteredUsers = users.filter((user: any) => user.name !== "GeeksforGeeks RGIPT Student Chapter");
+    return filteredUsers.map((user: any, index: any) => ({
       name: user.name,
       points: user.points,
       rank: index + 1
@@ -325,34 +350,56 @@ const leaderboard = async () => {
   }
 };
 
-// Updated questionDetails.
-// When global=true, return question points using current points from the database.
-// Otherwise, calculate deductions based on hintsData from the user model.
+// Updated questionDetails: it fetches the question, and if not yet visited it updates the record.
 const questionDetails = async (
   questionId: number,
   email: string,
   global: boolean = false
 ) => {
   try {
-    const question = await prisma.questions.findUnique({
+    let question = await prisma.questions.findUnique({
       where: { questionId },
       select: {
         imageUrl: true,
         points: true,
         questionId: true,
-        originalpoints: true
+        originalpoints: true,
+        questionVisitData: true
       }
     });
     if (!question) {
       throw new Error('Question not found');
     }
     
+    // Update visit data only when not global.
+    if (!global) {
+      // Assuming questionVisitData is stored as an array.
+      // For example: [{ isVisited: false, visitTime: null }]
+      if (
+        Array.isArray(question.questionVisitData) &&
+        question.questionVisitData.length > 0 &&
+        (question.questionVisitData[0] as { isVisited: boolean }).isVisited === false
+      ) {
+        const newVisitData = [{ isVisited: true, visitTime: new Date() }];
+        // Update the question's visit record.
+        question = await prisma.questions.update({
+          where: { questionId },
+          data: { questionVisitData: newVisitData },
+          select: {
+            imageUrl: true,
+            points: true,
+            questionId: true,
+            originalpoints: true,
+            questionVisitData: true
+          }
+        });
+      }
+    }
+    
     if (global) {
-      // Simply return the current points value from the database 
-      // (which already has the appropriate deductions applied)
       return question;
     } else {
-      // Get the user's hintsData from the database.
+      // For hints deductions based on user's hintsData, etc.
       const userRecord = await prisma.user.findUnique({
         where: { email },
         select: { hintsData: true }
