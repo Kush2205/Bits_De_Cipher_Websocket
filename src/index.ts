@@ -348,7 +348,10 @@ const questionDetails = async (
         question.questionVisitData.length > 0 &&
         (question.questionVisitData[0] as { isVisited: boolean }).isVisited === false
       ) {
-        const newVisitData = [{ isVisited: true, visitTime: moment().tz("Asia/Kolkata").toISOString() }];
+        const newVisitData = [{
+          isVisited: true,
+          visitTime: moment().tz("Asia/Kolkata").format("YYYY-MM-DDTHH:mm:ssZ")
+        }];
         question = await prisma.questions.update({
           where: { questionId },
           data: { questionVisitData: newVisitData },
@@ -373,7 +376,7 @@ const questionDetails = async (
         throw new Error('User not found');
       }
       const hintsArray = userRecord.hintsData as Array<{ id: number; hint1: boolean; hint2: boolean }>;
-      const hintRecord = hintsArray.find((record) => record.id === questionId);
+      const hintRecord = hintsArray.find(record => record.id === questionId);
       let points = question.points;
       if (hintRecord) {
         if (hintRecord.hint1) {
