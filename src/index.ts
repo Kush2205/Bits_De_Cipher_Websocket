@@ -74,6 +74,11 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'User not found' }));
         }
       } else if (command === 'answer') {
+        const contestEnd = new Date("April 6, 2025 16:00:00").getTime();
+        if (Date.now() > contestEnd) {
+          socket.send(JSON.stringify({ message: "The contest has ended" }));
+          return;
+        }
         if (!email) {
           socket.send(JSON.stringify({ error: 'Missing email parameter' }));
           return;
@@ -213,6 +218,11 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'User not found' }));
         }
       } else if (command === 'hint1' || command === 'hint2') {
+        const contestEnd = new Date("April 6, 2025 16:00:00").getTime();
+        if (Date.now() > contestEnd) {
+          socket.send(JSON.stringify({ message: "The contest has ended" }));
+          return;
+        }
         if (!email) {
           socket.send(JSON.stringify({ error: 'Missing email parameter' }));
           return;
