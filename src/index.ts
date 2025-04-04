@@ -257,33 +257,33 @@ wss.on('connection', (socket: ExtWebSocket) => {
         }
         
         // // Check the visitTime from questionVisitData
-        // let visitRecord = null;
-        // if (
-        //   Array.isArray(question.questionVisitData) && 
-        //   question.questionVisitData.length > 0
-        // ) {
-        //   visitRecord = question.questionVisitData[0];
-        // }
+        let visitRecord = null;
+        if (
+          Array.isArray(question.questionVisitData) && 
+          question.questionVisitData.length > 0
+        ) {
+          visitRecord = question.questionVisitData[0];
+        }
         
-        // // Ensure we have a valid visitTime
-        // if (!visitRecord || !(visitRecord as { visitTime: string }).visitTime) {
-        //   socket.send(JSON.stringify({ error: 'Visit data missing for this question' }));
-        //   return;
-        // }
+        // Ensure we have a valid visitTime
+        if (!visitRecord || !(visitRecord as { visitTime: string }).visitTime) {
+          socket.send(JSON.stringify({ error: 'Visit data missing for this question' }));
+          return;
+        }
         
-        // // Check if two hours (7200000ms) have elapsed since visitTime
-        // const visitTime = new Date((visitRecord as { visitTime: string }).visitTime).getTime();
-        // const now = new Date().getTime();
-        // const twoHours = 2 * 60 * 60 * 1000;
+        // Check if two hours (7200000ms) have elapsed since visitTime
+        const visitTime = new Date((visitRecord as { visitTime: string }).visitTime).getTime();
+        const now = new Date().getTime();
+        const twoHours = 2 * 60 * 1000;
         
-        // if (now - visitTime < twoHours) {
-        //   // If not elapsed, compute unlock time
-        //   const unlockTime = new Date(visitTime + twoHours);
-        //   socket.send(JSON.stringify({ 
-        //     message: `Hints will unlock at ${unlockTime.toLocaleTimeString()}` 
-        //   }));
-        //   return;
-        // }
+        if (now - visitTime < twoHours) {
+          // If not elapsed, compute unlock time
+          const unlockTime = new Date(visitTime + twoHours);
+          socket.send(JSON.stringify({ 
+            message: `Hints will unlock at ${unlockTime.toLocaleTimeString()}` 
+          }));
+          return;
+        }
         
         // If two hours have elapsed, proceed with the hint logic.
         const hintRecord = user.hintsData.find((record: any) => record.id === currentQuestionId);
