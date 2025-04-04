@@ -274,7 +274,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
         // Check if two hours (7200000ms) have elapsed since visitTime
         const visitTime = new Date((visitRecord as { visitTime: string }).visitTime).getTime();
         const now = new Date().getTime();
-        const twoHours = 2 * 60 * 1000;
+        const twoHours = 2 * 60 *60* 1000;
         
         if (now - visitTime < twoHours) {
           // If not elapsed, compute unlock time
