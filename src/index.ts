@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { prisma } from './lib/prisma';
 import { WebSocketServer, WebSocket } from 'ws';
+import moment from "moment-timezone";
 
 interface ExtWebSocket extends WebSocket {
   email?: string;
@@ -14,6 +15,8 @@ const activeUsers: any[] = [];
 
 const jsonReplacer = (key: string, value: any) =>
   typeof value === 'bigint' ? value.toString() : value;
+
+const now = moment().tz("Asia/Kolkata").valueOf();
 
 wss.on('connection', (socket: ExtWebSocket) => {
   socket.on('message', async (message: string) => {
