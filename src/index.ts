@@ -10,7 +10,6 @@ interface ExtWebSocket extends WebSocket {
 dotenv.config();
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const wss = new WebSocketServer({ port: PORT });
-
 const activeUsers: any[] = [];
 
 const jsonReplacer = (key: string, value: any) =>
@@ -64,7 +63,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
           };
           socket.send(JSON.stringify(data, jsonReplacer));
           console.log(activeUsers);
-
           wss.clients.forEach((client: WebSocket) => {
             if (client !== socket && client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({ leaderboard: leaderboardData }, jsonReplacer));
@@ -74,7 +72,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'User not found' }));
         }
       } else if (command === 'answer') {
-        const contestEnd = moment.tz("April 6, 2025 16:00:00", "Asia/Kolkata").valueOf();
+        const contestEnd = moment.tz("2025-04-06T16:00:00", "Asia/Kolkata").valueOf();
         if (moment().tz("Asia/Kolkata").valueOf() > contestEnd) {
           socket.send(JSON.stringify({ message: "The contest has ended" }));
           return;
@@ -140,7 +138,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
             if (newGlobalPoints < minPoints) {
               newGlobalPoints = minPoints;
             }
-            console.log(`Question ${currentQId} points updated: ${question.points} -> ${newGlobalPoints}`);
             try {
               await prisma.questions.update({
                 where: { questionId: currentQId },
@@ -154,7 +151,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
 
             let updatedQuestionData;
             try {
-              updatedQuestionData = await questionDetails(currentQId, email, true);
+              updatedQuestionData = await questionDetails(currentQId, email, true); // for the answering user
             } catch (err) {
               console.error('Error fetching updated question details:', err);
               socket.send(JSON.stringify({ error: 'Error fetching updated question details' }));
@@ -171,6 +168,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
               return;
             }
 
+            // Send correct answer response (including totalPoints) only to the current user
             socket.send(JSON.stringify({
               answerStatus: "correct",
               leaderboard: leaderboardData,
@@ -178,21 +176,29 @@ wss.on('connection', (socket: ExtWebSocket) => {
               totalPoints: updatedUser.points
             }, jsonReplacer));
 
+            // Broadcast leaderboard update to all other clients (without totalPoints)
             wss.clients.forEach((client: WebSocket) => {
               if (client !== socket && client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({ leaderboard: leaderboardData, totalPoints: updatedUser.points }, jsonReplacer));
+                client.send(JSON.stringify({ leaderboard: leaderboardData }, jsonReplacer));
               }
             });
-            
-            wss.clients.forEach((client: WebSocket) => {
+
+            // For each connected client, recalculate the next question based on their own hints data.
+            for (const client of wss.clients) {
               const extClient = client as ExtWebSocket;
               if (extClient.readyState === WebSocket.OPEN && extClient.email) {
                 const activeUser = activeUsers.find((u: any) => u.email === extClient.email);
-                if (activeUser && Number(activeUser.questionsAnswered) + 1 === currentQId) {
-                  client.send(JSON.stringify({ updatedQuestion: updatedQuestionData }, jsonReplacer));
+                if (activeUser) {
+                  const nextQId = Number(activeUser.questionsAnswered) + 1;
+                  try {
+                    const updatedQuestionForUser = await questionDetails(nextQId, extClient.email, false);
+                    client.send(JSON.stringify({ updatedQuestion: updatedQuestionForUser }, jsonReplacer));
+                  } catch (error) {
+                    console.error("Error sending updated question detail for", extClient.email, error);
+                  }
                 }
               }
-            });
+            }
           } else {
             socket.send(JSON.stringify({ answerStatus: "incorrect" }, jsonReplacer));
           }
@@ -200,7 +206,7 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'User not found' }));
         }
       } else if (command === 'hint1' || command === 'hint2') {
-        const contestEnd = moment.tz("April 6, 2025 16:00:00", "Asia/Kolkata").valueOf();
+        const contestEnd = moment.tz("2025-04-06T16:00:00", "Asia/Kolkata").valueOf();
         if (moment().tz("Asia/Kolkata").valueOf() > contestEnd) {
           socket.send(JSON.stringify({ message: "The contest has ended" }));
           return;
@@ -237,7 +243,6 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'Question not found for hints' }));
           return;
         }
-        
         let visitRecord = null;
         if (Array.isArray(question.questionVisitData) && question.questionVisitData.length > 0) {
           visitRecord = question.questionVisitData[0];
@@ -246,12 +251,14 @@ wss.on('connection', (socket: ExtWebSocket) => {
           socket.send(JSON.stringify({ error: 'Visit data missing for this question' }));
           return;
         }
-        const visitTime = moment((visitRecord as { visitTime: string }).visitTime).tz("Asia/Kolkata").valueOf();
+        const visitTime = moment((visitRecord as { visitTime: string }).visitTime)
+          .tz("Asia/Kolkata").valueOf();
         const currTime = moment().tz("Asia/Kolkata").valueOf();
-        const twoHours = 2 * 60 * 60 * 1000;
+        // Note: twoHours here is set to 2 * 60 * 1000 (2 minutes) for testing; update as needed.
+        const twoHours = 2 * 60 *60* 1000;
         if (currTime - visitTime < twoHours) {
           const unlockTime = moment(visitTime + twoHours).tz("Asia/Kolkata");
-          socket.send(JSON.stringify({ message: `Hints will unlock at ${unlockTime.format("LT")}` }));
+          socket.send(JSON.stringify({ message: `Hints will unlock at ${unlockTime.format("LTS")}` }));
           return;
         }
         const hintRecord = user.hintsData.find((record: any) => record.id === currentQuestionId);
