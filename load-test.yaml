@@ -1,0 +1,22 @@
+# filename: load-test.yaml
+config:
+  target: "ws://your-server-domain-or-ip:8080"
+  phases:
+    - duration: 60   # test for 60 seconds
+      arrivalRate: 10  # 10 new connections per second
+  # processor: "./processor.js"  # Optional custom logic if needed
+  ws:
+    reconnect: true
+scenarios:
+  - engine: "ws"
+    flow:
+      - send: 
+          command: "connect"
+          email: "test_user@example.com"
+      - think: 2
+      - send:
+          command: "answer"
+          answer:
+            id: 1
+            answer: "Sample response"
+      - think: 1
