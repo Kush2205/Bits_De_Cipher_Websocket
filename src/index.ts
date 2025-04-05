@@ -57,7 +57,11 @@ wss.on('connection', (socket: ExtWebSocket) => {
             socket.send(JSON.stringify({ error: 'Error fetching data' }));
             return;
           }
-          const data = { leaderboard: leaderboardData, question: questionData };
+          const data = {
+            leaderboard: leaderboardData,
+            question: questionData,
+            totalPoints: user.points
+          };
           socket.send(JSON.stringify(data, jsonReplacer));
           console.log(activeUsers);
 
@@ -170,12 +174,13 @@ wss.on('connection', (socket: ExtWebSocket) => {
             socket.send(JSON.stringify({
               answerStatus: "correct",
               leaderboard: leaderboardData,
-              question: nextQuestionData
+              question: nextQuestionData,
+              totalPoints: updatedUser.points
             }, jsonReplacer));
 
             wss.clients.forEach((client: WebSocket) => {
               if (client !== socket && client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({ leaderboard: leaderboardData }, jsonReplacer));
+                client.send(JSON.stringify({ leaderboard: leaderboardData, totalPoints: updatedUser.points }, jsonReplacer));
               }
             });
             
